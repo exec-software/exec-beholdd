@@ -25,10 +25,15 @@ jobs:
       - name: Test the workspace
         run: cargo test --workspace --locked
 
+      # The vulkan feature's build script compiles every compute shader with
+      # glslc, so the toolchain has to be present even though no GPU is.
+      - name: Install the shader compiler
+        run: sudo apt-get update && sudo apt-get install --yes --no-install-recommends glslc
+
       # The optional backends are the point of the project, so keep them
       # compiling even though this runner cannot exercise them. ash links the
-      # Vulkan loader at runtime, and the hag backend builds from the checked
-      # vendor snapshot, so neither needs a system library here.
+      # Vulkan loader at runtime and the hag backend builds from the checked
+      # vendor snapshot, so beyond glslc neither needs a system library here.
       - name: Check the Vulkan and HAG backends
         run: cargo check --workspace --all-targets --locked --features beholdd-backend/vulkan,beholdd-backend/hag
 
