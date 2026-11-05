@@ -4,14 +4,6 @@
       "bytes": 167,
       "sha256": "4f304d8657e79ec7687477a15ad2182eea5c4566429308e290d671decd9e4533"
     },
-    "CONTRIBUTING.md": {
-      "bytes": 4565,
-      "sha256": "1baee279a6add74304113e5c290fd950aac95d3ba4f4bee691a7cbe9c76ee281"
-    },
-    "CONTRIBUTORS.md": {
-      "bytes": 777,
-      "sha256": "e5be70306ecb10f1ea07c015cd40238430499bde604e1c46f8967ab1f196502b"
-    },
     "Cargo.lock": {
       "bytes": 370,
       "sha256": "4148b7145fc604d0e2c636123af8b2f5ef4ccf964721cac1695d2640886b429a"
@@ -23,14 +15,6 @@
     "LICENSE": {
       "bytes": 1103,
       "sha256": "5591fd9c008676f41952e914200711f20167159fc3b4e18c9c8aba1590c03b53"
-    },
-    "README.md": {
-      "bytes": 5641,
-      "sha256": "c702bedfe14cb145b85feda4961c13201d9207ce1510a7d36708b751788975ea"
-    },
-    "SECURITY.md": {
-      "bytes": 3601,
-      "sha256": "4f616821dfc3052857d3a1334c79e1512e6a018c82a888adff4f1f2c2f1320dc"
     },
     "VERSION": {
       "bytes": 3,

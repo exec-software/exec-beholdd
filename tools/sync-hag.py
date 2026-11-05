@@ -26,10 +26,10 @@ FILES = (
     "Cargo.toml",
     "Cargo.lock",
     "LICENSE",
-    "README.md",
-    "CONTRIBUTING.md",
-    "CONTRIBUTORS.md",
-    "SECURITY.md",
+    # Upstream's governance documents are deliberately not vendored: they describe
+    # how to contribute to HAG, not how this snapshot builds, and a frozen copy of
+    # someone else's README only goes stale. Source, headers, licence and notices
+    # are what a vendored snapshot owes its readers.
     "VERSION",
     ".gitleaks.toml",
     "thirdparty.md",
