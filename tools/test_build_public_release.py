@@ -1,6 +1,7 @@
 """Containment and artifact-boundary regressions; no Docker, model or GPU work."""
 import io
 import hashlib
+import json
 from pathlib import Path
 import tempfile
 import tarfile
@@ -147,6 +148,31 @@ class ReleaseBoundaryTests(unittest.TestCase):
                         with self.assertRaises(ValueError):
                             release.download_python_wheel(pin, target)
                         self.assertEqual(list(target.iterdir()), [])
+
+    def test_hag_upstream_notices_are_complete_and_snapshot_bound(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            source = root / 'source'
+            inventory = {}
+            for name in (*release.HAG_UPSTREAM_SOURCES, 'thirdparty.md'):
+                path = source / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text('synthetic upstream notice for ' + name)
+                inventory[name] = {'sha256': release.digest(path), 'bytes': path.stat().st_size}
+            provenance = {'source': {'repository': 'https://github.com/exec-software/exec-hag',
+                          'revision': 'a' * 40, 'dirty': False}, 'files': inventory}
+            (source / 'provenance.json').write_text(json.dumps(provenance))
+            release.collect_hag_upstream(source, root / 'output')
+            for name in (*inventory, 'provenance.json'):
+                self.assertEqual((root / 'output' / name).read_bytes(), (source / name).read_bytes())
+            omitted = source / release.HAG_UPSTREAM_SOURCES[0]
+            original = omitted.read_bytes()
+            omitted.unlink()
+            with self.assertRaisesRegex(ValueError, 'absent or differs'):
+                release.collect_hag_upstream(source, root / 'missing')
+            omitted.write_bytes(original + b' altered')
+            with self.assertRaisesRegex(ValueError, 'absent or differs'):
+                release.collect_hag_upstream(source, root / 'altered')
 
 
 if __name__ == '__main__':

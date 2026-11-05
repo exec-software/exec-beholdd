@@ -62,6 +62,11 @@ directory and contains:
   copyright notice and license files with hashes. If that image provides only a
   broader distribution copyright notice, its receipt records that broader scope.
   CPU/HAG server artifacts include chat-template provenance and Apache-2.0 text.
+- HAG-bearing artifacts retain the four adapted Linux packet/UAPI source files
+  with their complete upstream notices under `licenses/hag-upstream/src/linux/`.
+  Adjacent `thirdparty.md` and the unchanged canonical snapshot `provenance.json`
+  identify their origins and hashes. These are attribution copies, not a complete
+  standalone HAG source checkout.
 - `hag-library/`, containing the standalone HAG shared/static libraries, C header,
   dependency notices and its own unchanged vendored source revision and lockfile.
   Both libraries pass a C link/execution smoke using constant-query functions;

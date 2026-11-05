@@ -30,6 +30,8 @@ RESERVE = 8 * 1024**3
 PIDS = 1152
 TIMEOUT = 900
 FEATURES = 'beholdd-cli/hag-openmythos,beholdd-memory/test-fault-injection'
+HAG_UPSTREAM_SOURCES = ('src/linux/probe_packets.rs', 'src/linux/compute/packets.rs',
+                        'src/linux/uapi.rs', 'src/linux/submission_uapi.rs')
 REMAP = '\x1f'.join('--remap-path-prefix=' + item for item in (
     '/source=/usr/src/beholdd', '/work=/usr/src/beholdd-build',
     '/usr/local/cargo=/usr/src/cargo', '/usr/local/rustup=/usr/src/rust-toolchain',
@@ -214,6 +216,29 @@ def collect_rust_notices(sysroot, output, rustc_identity):
     return receipt
 
 
+def collect_hag_upstream(source, output):
+    """Keep exact adapted-source notices and their canonical snapshot provenance."""
+    provenance = json.loads((source / 'provenance.json').read_text())
+    identity = provenance.get('source', {})
+    if (identity.get('repository') != 'https://github.com/exec-software/exec-hag'
+            or identity.get('dirty') is not False
+            or not re.fullmatch(r'[a-f0-9]{40}', identity.get('revision', ''))):
+        raise ValueError('HAG upstream notices require clean canonical source provenance')
+    files = (*HAG_UPSTREAM_SOURCES, 'thirdparty.md')
+    for name in files:
+        path = source / name
+        record = provenance.get('files', {}).get(name, {})
+        if (path.is_symlink() or not path.resolve().is_relative_to(source.resolve())
+                or not path.is_file() or digest(path) != record.get('sha256')
+                or path.stat().st_size != record.get('bytes')):
+            raise ValueError('HAG upstream notice source is absent or differs from its snapshot')
+    output.mkdir(parents=True)
+    for name in (*files, 'provenance.json'):
+        destination = output / name
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(source / name, destination)
+
+
 def download_python_wheel(pin, directory):
     """Fetch only the pinned wheel, rejecting truncation, excess bytes and hash drift."""
     if (Path(pin['filename']).name != pin['filename']
@@ -298,6 +323,8 @@ def inside(arguments):
         (licenses / 'chat-templates').mkdir()
         shutil.copyfile('/source/crates/beholdd-server/src/templates/README.md', licenses / 'chat-templates/README.md')
         shutil.copyfile('/source/LICENSE', licenses / 'chat-templates/LICENSE-APACHE-2.0')
+        if component == 'hag':
+            collect_hag_upstream(Path('/source/vendor/exec-hag'), licenses / 'hag-upstream')
         receipt = {'cargoFeatures': ['hag-native'] if component == 'hag' else [],
                    'binary': {'path': f'{component}/bin/beholdd', 'sha256': digest(binary), 'bytes': binary.stat().st_size},
                    'requiredGlibcVersions': required, 'emptyRegistryHttpSmoke': 'passed'}
@@ -344,6 +371,7 @@ def inside(arguments):
         licenses.mkdir()
         license_inventory(metadata, licenses)
         shutil.copytree('/work/rust-runtime-notices', licenses / 'rust-standard-library')
+        collect_hag_upstream(source, licenses / 'hag-upstream')
         receipt = {'source': provenance['source'], 'version': (source / 'VERSION').read_text().strip(),
                    'cargoFeatures': ['capi'], 'cargoLockSha256': digest(source / 'Cargo.lock'),
                    'files': files, 'headerSha256': digest(output / 'include/exec_hag.h'),
