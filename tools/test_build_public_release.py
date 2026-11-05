@@ -1,5 +1,6 @@
 """Containment and artifact-boundary regressions; no Docker, model or GPU work."""
 import io
+import hashlib
 from pathlib import Path
 import tempfile
 import tarfile
@@ -80,10 +81,25 @@ class ReleaseBoundaryTests(unittest.TestCase):
             self.assertNotIn('--privileged', create)
             self.assertNotIn('--device', create)
             self.assertIn('TMPDIR=/work/tmp', create)
+            for name in ['OPENBLAS_NUM_THREADS', 'OMP_NUM_THREADS', 'MKL_NUM_THREADS']:
+                self.assertIn(name + '=1', create)
             self.assertIn('noexec', create[create.index('--tmpfs') + 1])
             self.assertEqual(run.call_args_list[-1].args[0],
                              ['docker', 'rm', '--force', create[create.index('--name') + 1]])
             self.assertEqual(builder.stages, [])
+
+    def test_termination_unwinds_container_cleanup(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            builder = release.Builder(Path(temporary))
+            builder.logs.mkdir()
+            with patch.object(release, 'admission', return_value=11 * 1024**3), \
+                    patch.object(release.subprocess, 'run', side_effect=[
+                        subprocess.CompletedProcess([], 0), SystemExit(143),
+                        subprocess.CompletedProcess([], 0),
+                    ]) as run, self.assertRaises(SystemExit):
+                builder.stage('fixture', ['run', 'fixture-command'])
+            self.assertEqual(run.call_args_list[-1].args[0][:3], ['docker', 'rm', '--force'])
+            self.assertEqual(run.call_count, 3)
 
     def test_license_source_cannot_escape_the_build_roots(self):
         metadata = {'packages': [{'id': 'untrusted', 'manifest_path': '/unreviewed/Cargo.toml'}],
@@ -114,6 +130,23 @@ class ReleaseBoundaryTests(unittest.TestCase):
             result = release.collect_rust_notices(root / 'sysroot', root / 'output', 'synthetic rustc')
             self.assertEqual(result['scope'], 'full-distribution')
             self.assertEqual([record['file'] for record in result['files']], ['COPYRIGHT.html'])
+
+    def test_python_wheel_fetch_is_bound_to_exact_bytes(self):
+        good = b'synthetic wheel payload'
+        pin = {'filename': 'fixture.whl', 'url': 'https://files.pythonhosted.org/packages/fixture.whl',
+               'sha256': hashlib.sha256(good).hexdigest(), 'bytes': len(good)}
+        for payload, expected in [(good, True), (good[:-1], False), (good + b'x', False),
+                                  (b'x' * len(good), False)]:
+            with self.subTest(payload=payload), tempfile.TemporaryDirectory() as temporary:
+                target = Path(temporary) / 'wheels'
+                with patch.object(release.urllib.request, 'urlopen', return_value=io.BytesIO(payload)):
+                    if expected:
+                        release.download_python_wheel(pin, target)
+                        self.assertEqual((target / 'fixture.whl').read_bytes(), good)
+                    else:
+                        with self.assertRaises(ValueError):
+                            release.download_python_wheel(pin, target)
+                        self.assertEqual(list(target.iterdir()), [])
 
 
 if __name__ == '__main__':

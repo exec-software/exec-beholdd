@@ -14,6 +14,7 @@ import os
 from pathlib import Path
 import re
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -213,6 +214,31 @@ def collect_rust_notices(sysroot, output, rustc_identity):
     return receipt
 
 
+def download_python_wheel(pin, directory):
+    """Fetch only the pinned wheel, rejecting truncation, excess bytes and hash drift."""
+    if (Path(pin['filename']).name != pin['filename']
+            or not pin['url'].startswith('https://files.pythonhosted.org/packages/')
+            or not re.fullmatch(r'[a-f0-9]{64}', pin['sha256'])
+            or not 0 < pin['bytes'] < 100 * 1024**2):
+        raise ValueError('invalid Python wheel pin')
+    directory.mkdir(parents=True)
+    target = directory / pin['filename']
+    partial = target.with_suffix(target.suffix + '.part')
+    count = 0
+    try:
+        with urllib.request.urlopen(pin['url'], timeout=30) as response, partial.open('xb') as output:
+            for block in iter(lambda: response.read(1024 * 1024), b''):
+                count += len(block)
+                if count > pin['bytes']:
+                    raise ValueError('Python wheel exceeds its pinned size')
+                output.write(block)
+        if count != pin['bytes'] or digest(partial) != pin['sha256']:
+            raise ValueError('Python wheel differs from its pinned size or hash')
+        partial.rename(target)
+    finally:
+        partial.unlink(missing_ok=True)
+
+
 def inside(arguments):
     validate_cgroup()
     action, *args = arguments
@@ -229,6 +255,23 @@ def inside(arguments):
         sysroot = Path(subprocess.check_output(['rustc', '--print', 'sysroot'], text=True).strip())
         facts['rustRuntimeNotices'] = collect_rust_notices(sysroot, Path('/work/rust-runtime-notices'), facts['rustc'])
         Path('/work/toolchain.json').write_text(json.dumps(facts, indent=2) + '\n')
+    elif action in ('fetch-python', 'install-python'):
+        pin = json.loads(Path('/source/tools/release/python-wheel.json').read_text())
+        wheel = Path('/work/python-wheels') / pin['filename']
+        if action == 'fetch-python':
+            download_python_wheel(pin, wheel.parent)
+        else:
+            if wheel.stat().st_size != pin['bytes'] or digest(wheel) != pin['sha256']:
+                raise ValueError('downloaded Python wheel no longer matches its pin')
+            requirements = Path('/work/python-requirements.txt')
+            requirements.write_text(f'{wheel} --hash=sha256:{pin["sha256"]}\n')
+            subprocess.run(['python3', '-m', 'pip', 'install', '--no-index', '--no-deps', '--no-cache-dir',
+                            '--require-hashes', '--only-binary=:all:', '--target', '/work/python-deps',
+                            '--requirement', str(requirements)], check=True)
+            version = subprocess.check_output(['python3', '-c', 'import numpy; print(numpy.__version__)'], text=True).strip()
+            if version != pin['version']:
+                raise ValueError('installed NumPy differs from its pinned version')
+            Path('/work/test-dependencies.json').write_text(json.dumps({'numpy': pin}, indent=2) + '\n')
     elif action == 'component':
         component = args[0]
         if component not in ('cpu', 'hag'):
@@ -335,7 +378,9 @@ class Builder:
                        'CARGO_BUILD_JOBS': '1', 'RUST_TEST_THREADS': '1', 'CARGO_ENCODED_RUSTFLAGS': REMAP,
                        # Rust doctests, C link smokes and Python fixtures execute temporary files.
                        # Keep these inside the bounded writable work mount; /tmp stays noexec.
-                       'PYTHONDONTWRITEBYTECODE': '1', 'TMPDIR': '/work/tmp'}
+                       'PYTHONDONTWRITEBYTECODE': '1', 'TMPDIR': '/work/tmp', 'PYTHONPATH': '/work/python-deps',
+                       'OPENBLAS_NUM_THREADS': '1', 'OMP_NUM_THREADS': '1', 'MKL_NUM_THREADS': '1',
+                       'BLIS_NUM_THREADS': '1', 'VECLIB_MAXIMUM_THREADS': '1'}
         for key, value in environment.items():
             arguments += ['--env', key + '=' + value]
         arguments += [self.image, 'python3', '/source/tools/build_public_release.py', '--inside', *command]
@@ -401,14 +446,16 @@ def main():
                     '--tag', builder.image, '--file', str(dockerfile), str(dockerfile.parent)],
                    check=True, timeout=600)
     builder.stage('toolchain', ['toolchain'])
+    builder.stage('fetch-python', ['fetch-python'], network=True)
+    builder.stage('install-python', ['install-python'])
+    builder.stage('python-tests', ['run', 'python3', '-m', 'unittest', 'discover', '-s', 'tools', '-p', 'test_*.py'])
+    scripts = sorted('/source/' + str(path.relative_to(builder.source)) for path in (builder.source / 'tools').glob('test_*.mjs'))
+    builder.stage('javascript-tests', ['run', 'node', '--test', '--test-concurrency=1', *scripts])
     builder.stage('fetch', ['run', 'cargo', 'fetch', '--locked', '--target', 'x86_64-unknown-linux-gnu'], network=True)
     builder.stage('fetch-hag-library', ['run', 'cargo', 'fetch', '--locked', '--target', 'x86_64-unknown-linux-gnu',
                                       '--manifest-path', '/source/vendor/exec-hag/Cargo.toml'], network=True)
     builder.stage('rust-tests', ['run', 'cargo', 'test', '--workspace', '--locked', '--offline'])
     builder.stage('feature-tests', ['run', 'cargo', 'test', '--workspace', '--locked', '--offline', '--features', FEATURES])
-    builder.stage('python-tests', ['run', 'python3', '-m', 'unittest', 'discover', '-s', 'tools', '-p', 'test_*.py'])
-    scripts = sorted('/source/' + str(path.relative_to(builder.source)) for path in (builder.source / 'tools').glob('test_*.mjs'))
-    builder.stage('javascript-tests', ['run', 'node', '--test', '--test-concurrency=1', *scripts])
     for component in ['cpu', 'hag']:
         command = ['run', 'cargo', 'build', '--release', '--locked', '--offline', '-p', 'beholdd-cli']
         if component == 'hag':
@@ -434,9 +481,11 @@ def main():
                 'cargoLockSha256': digest(builder.source / 'Cargo.lock'),
                 'inventorySha256': digest(bundle / 'source-files.json')},
                 'toolchain': json.loads((work / 'work/toolchain.json').read_text()),
+                'testDependencies': json.loads((work / 'work/test-dependencies.json').read_text()),
                 'builderImages': images, 'dockerfileSha256': digest(dockerfile),
                 'containerLimits': {'memoryBytes': MEMORY, 'swapBytes': 0, 'cpus': 1.5,
-                                    'pids': PIDS, 'timeoutSeconds': TIMEOUT, 'hostReserveBytes': RESERVE},
+                                    'pids': PIDS, 'timeoutSeconds': TIMEOUT, 'hostReserveBytes': RESERVE,
+                                    'blasThreads': 1},
                 'rustPathRemapping': REMAP.split('\x1f'), 'stages': builder.stages,
                 'testFeatures': FEATURES.split(','),
                 'components': {component: json.loads((bundle / component / 'receipt.json').read_text()) for component in ['cpu', 'hag']},
@@ -462,6 +511,10 @@ def main():
 
 
 if __name__ == '__main__':
+    # Workflow cancellation must unwind stage cleanup and remove its container.
+    def terminate(signum, _frame):
+        raise SystemExit(128 + signum)
+    signal.signal(signal.SIGTERM, terminate)
     try:
         sys.exit(main())
     except (OSError, ValueError, subprocess.SubprocessError) as error:

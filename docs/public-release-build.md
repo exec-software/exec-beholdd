@@ -24,7 +24,7 @@ limits. The workflow itself has a 60-minute deadline.
 
 Source is exported from a clean Git commit into a read-only mount. Containers run
 without added capabilities, with no-new-privileges and a read-only root filesystem.
-Only Cargo dependency fetching has network access; compilation and tests are
+Only Cargo dependency and checksum-pinned Python-wheel fetching have network access; compilation and tests are
 offline. No GPU device, model file, private checkout or credential directory is
 mounted. This is a hosted-build supervisor; it does not replace or relax the local
 [development supervisor](development.md#optional-linux-resource-supervisor).
@@ -35,6 +35,12 @@ The build runs the default Rust workspace suite and an expanded suite with HAG,
 OpenMythos and memory-failure test features. The separate Vulkan prototype needs
 `glslc` and is not part of this CPU/HAG build or its test matrix. Ignored live tests stay ignored.
 Python and JavaScript tool suites run with the pinned interpreter versions. Each
+synthetic numerical reference uses NumPy 2.4.6 from its exact CPython 3.12 Linux
+wheel, installed offline after size/hash verification. The wheel pin is in
+[`python-wheel.json`](../tools/release/python-wheel.json); its version and hash are
+recorded in the build manifest. BLAS/OpenMP/MKL thread counts are clamped to one.
+Python/JavaScript checks run before Rust compilation so missing test dependencies
+fail early. Each
 actual executable then serves an empty model registry on isolated loopback;
 health, native identity, empty model listing and graceful SIGTERM are checked.
 These checks do not qualify model output, GPU execution, performance or hardware.
