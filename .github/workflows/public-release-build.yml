@@ -1,0 +1,31 @@
+name: Public Linux build
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    # Public standard x64 runners have 16 GB RAM. Admission is checked at runtime.
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Test release containment and archive policy
+        run: python3 -m unittest discover -s tools -p test_build_public_release.py
+      - name: Build and test CPU and HAG without devices or models
+        run: python3 tools/build_public_release.py --work-dir "$RUNNER_TEMP/beholdd-public-build"
+      - name: Retain verified build inputs and outputs
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: beholdd-linux-x86_64-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/beholdd-public-build/output/*.tar.gz
+            ${{ runner.temp }}/beholdd-public-build/output/SHA256SUMS
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0

@@ -127,6 +127,11 @@ The accepted [fit contract](docs/adr/0001-fit-contract.md) and
 
 ## Development and verification
 
+The manual [public Linux build](docs/public-release-build.md) produces separate
+CPU/HAG artifacts from an exact clean commit, with bounded hardware-free tests,
+an older glibc toolchain and complete dependency notices. It does not publish or
+qualify live inference automatically.
+
 [Development setup](docs/development.md) describes build prerequisites and the
 optional Linux resource supervisor. The ordinary suite uses synthetic fixtures; it does not require downloading a
 checkpoint or submitting work to a GPU:
