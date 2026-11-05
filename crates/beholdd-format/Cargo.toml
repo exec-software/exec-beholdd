@@ -1,0 +1,12 @@
+[package]
+name = "beholdd-format"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+thiserror.workspace = true
+beholdd-core = { path = "../beholdd-core" }
+serde_json = "1"

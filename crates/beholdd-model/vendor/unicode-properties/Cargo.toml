@@ -1,0 +1,15 @@
+[package]
+name = "unicode-properties"
+version = "0.1.4"
+edition = "2021"
+license = "MIT OR Apache-2.0"
+description = "Vendored Unicode general-category tables for Qwen tokenization"
+publish = false
+
+[features]
+default = ["general-category", "emoji"]
+general-category = []
+emoji = []
+
+[lib]
+path = "src/lib.rs"

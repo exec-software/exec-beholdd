@@ -1,0 +1,182 @@
+#version 460
+
+// Expert-major Tile4 BF16 routed-MoE stage 1. Each workgroup owns one
+// {expert, intermediate row} and evaluates up to four item-route occurrences.
+// A lane loads each gate/up BF16 pair once, then applies it to every active
+// occurrence while retaining four independent deterministic Tree128 reductions.
+//
+// Indirect dispatch: {intermediate_size, tile_count, 1}
+//   gl_WorkGroupID.x = intermediate row
+//   gl_WorkGroupID.y = expert-major tile
+//
+// Descriptor ABI:
+//   binding 0: tightly packed f32 inputs [N,H], exposed as vec2 values
+//   binding 1: the complete packed row-major BF16 arena block
+//   binding 2: tightly packed f32 destination scratch [N,K,F]
+//   binding 3: combined uint metadata
+//
+// Combined metadata begins with route metadata [N,K,4], followed by the gate
+// and down VkDispatchIndirectCommand triplets. Tile records begin at
+// pc.tile_word_offset. Each eight-word record is:
+//   [absolute gate word, absolute up word, absolute down word, count,
+//    occurrence 0, occurrence 1, occurrence 2, occurrence 3]
+// where occurrence = item * K + route and count is in 1..4.
+//
+// The host guarantees exact dispatch dimensions, tight non-overlapping ranges,
+// even H/F, unique and in-range active occurrences, equal expert offsets within
+// each tile, and non-wrapping uint products and sums.
+layout(local_size_x = 128, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, std430) readonly restrict buffer SourceActivations {
+    vec2 source_pairs[];
+};
+layout(set = 0, binding = 1, std430) readonly restrict buffer PackedWeight {
+    uint weight_words[];
+};
+layout(set = 0, binding = 2, std430) writeonly restrict buffer DestinationActivations {
+    float destination_values[];
+};
+layout(set = 0, binding = 3, std430) readonly restrict buffer CombinedMetadata {
+    uint route_meta[];
+};
+
+layout(push_constant) uniform Parameters {
+    uint hidden_size;
+    uint intermediate_size;
+    uint route_count;
+    uint accumulate;
+    uint batch_size;
+    uint tile_word_offset;
+} pc;
+
+shared vec2 partial0[128];
+shared vec2 partial1[128];
+shared vec2 partial2[128];
+shared vec2 partial3[128];
+
+vec2 unpack_bf16_pair(uint packed) {
+    return uintBitsToFloat(uvec2(packed << 16u, packed & 0xffff0000u));
+}
+
+void main() {
+    uint intermediate = gl_WorkGroupID.x;
+    uint tile_word = pc.tile_word_offset + gl_WorkGroupID.y * 8u;
+    uint count = route_meta[tile_word + 3u];
+    uint occurrence0 = route_meta[tile_word + 4u];
+    uint occurrence1 = route_meta[tile_word + 5u];
+    uint occurrence2 = route_meta[tile_word + 6u];
+    uint occurrence3 = route_meta[tile_word + 7u];
+    uint lane = gl_LocalInvocationID.x;
+
+    uint hidden_words = pc.hidden_size >> 1u;
+    uint source_base0 = (occurrence0 / pc.route_count) * hidden_words;
+    uint source_base1 = (occurrence1 / pc.route_count) * hidden_words;
+    uint source_base2 = (occurrence2 / pc.route_count) * hidden_words;
+    uint source_base3 = (occurrence3 / pc.route_count) * hidden_words;
+    uint row_word_offset = intermediate * hidden_words;
+    uint gate_word = route_meta[tile_word] + row_word_offset;
+    uint up_word = route_meta[tile_word + 1u] + row_word_offset;
+
+    vec2 sums0 = vec2(0.0);
+    vec2 sums1 = vec2(0.0);
+    vec2 sums2 = vec2(0.0);
+    vec2 sums3 = vec2(0.0);
+    for (uint pair = lane; pair < hidden_words; pair += 128u) {
+        vec2 gate_pair = unpack_bf16_pair(weight_words[gate_word + pair]);
+        vec2 up_pair = unpack_bf16_pair(weight_words[up_word + pair]);
+
+        vec2 activation0 = source_pairs[source_base0 + pair];
+        sums0 += vec2(dot(gate_pair, activation0), dot(up_pair, activation0));
+        if (count > 1u) {
+            vec2 activation1 = source_pairs[source_base1 + pair];
+            sums1 += vec2(dot(gate_pair, activation1), dot(up_pair, activation1));
+        }
+        if (count > 2u) {
+            vec2 activation2 = source_pairs[source_base2 + pair];
+            sums2 += vec2(dot(gate_pair, activation2), dot(up_pair, activation2));
+        }
+        if (count > 3u) {
+            vec2 activation3 = source_pairs[source_base3 + pair];
+            sums3 += vec2(dot(gate_pair, activation3), dot(up_pair, activation3));
+        }
+    }
+
+    partial0[lane] = sums0;
+    partial1[lane] = sums1;
+    partial2[lane] = sums2;
+    partial3[lane] = sums3;
+    barrier();
+
+    if (lane < 64u) {
+        partial0[lane] += partial0[lane + 64u];
+        partial1[lane] += partial1[lane + 64u];
+        partial2[lane] += partial2[lane + 64u];
+        partial3[lane] += partial3[lane + 64u];
+    }
+    barrier();
+    if (lane < 32u) {
+        partial0[lane] += partial0[lane + 32u];
+        partial1[lane] += partial1[lane + 32u];
+        partial2[lane] += partial2[lane + 32u];
+        partial3[lane] += partial3[lane + 32u];
+    }
+    barrier();
+    if (lane < 16u) {
+        partial0[lane] += partial0[lane + 16u];
+        partial1[lane] += partial1[lane + 16u];
+        partial2[lane] += partial2[lane + 16u];
+        partial3[lane] += partial3[lane + 16u];
+    }
+    barrier();
+    if (lane < 8u) {
+        partial0[lane] += partial0[lane + 8u];
+        partial1[lane] += partial1[lane + 8u];
+        partial2[lane] += partial2[lane + 8u];
+        partial3[lane] += partial3[lane + 8u];
+    }
+    barrier();
+    if (lane < 4u) {
+        partial0[lane] += partial0[lane + 4u];
+        partial1[lane] += partial1[lane + 4u];
+        partial2[lane] += partial2[lane + 4u];
+        partial3[lane] += partial3[lane + 4u];
+    }
+    barrier();
+    if (lane < 2u) {
+        partial0[lane] += partial0[lane + 2u];
+        partial1[lane] += partial1[lane + 2u];
+        partial2[lane] += partial2[lane + 2u];
+        partial3[lane] += partial3[lane + 2u];
+    }
+    barrier();
+
+    if (lane == 0u) {
+        vec2 totals0 = partial0[0] + partial0[1];
+        float gate0 = totals0.x;
+        float silu0 = gate0 / (1.0 + exp(-gate0));
+        destination_values[occurrence0 * pc.intermediate_size + intermediate] =
+            silu0 * totals0.y;
+
+        if (count > 1u) {
+            vec2 totals1 = partial1[0] + partial1[1];
+            float gate1 = totals1.x;
+            float silu1 = gate1 / (1.0 + exp(-gate1));
+            destination_values[occurrence1 * pc.intermediate_size + intermediate] =
+                silu1 * totals1.y;
+        }
+        if (count > 2u) {
+            vec2 totals2 = partial2[0] + partial2[1];
+            float gate2 = totals2.x;
+            float silu2 = gate2 / (1.0 + exp(-gate2));
+            destination_values[occurrence2 * pc.intermediate_size + intermediate] =
+                silu2 * totals2.y;
+        }
+        if (count > 3u) {
+            vec2 totals3 = partial3[0] + partial3[1];
+            float gate3 = totals3.x;
+            float silu3 = gate3 / (1.0 + exp(-gate3));
+            destination_values[occurrence3 * pc.intermediate_size + intermediate] =
+                silu3 * totals3.y;
+        }
+    }
+}

@@ -1,0 +1,31 @@
+{
+  "fixtures": [
+    {
+      "id": "list_1_to_8",
+      "messages": [
+        {
+          "role": "user",
+          "content": "List the integers from 1 to 8, separated by commas. No explanation. /no_think"
+        }
+      ],
+      "max_tokens": 80,
+      "temperature": 0,
+      "expected_semantic": {
+        "kind": "integer_csv",
+        "values": [
+          1,
+          2,
+          3,
+          4,
+          5,
+          6,
+          7,
+          8
+        ],
+        "allow_terminal_period": true
+      }
+    }
+  ],
+  "timing_fixture_id": "list_1_to_8",
+  "maximum_prompt_tokens": 49
+}

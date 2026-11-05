@@ -1,0 +1,67 @@
+[package]
+name = "beholdd-backend"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+default = []
+vulkan = ["dep:ash"]
+hag = ["dep:exec-hag"]
+hag-native = ["hag", "exec-hag/native-compute"]
+
+[dependencies]
+anyhow.workspace = true
+thiserror.workspace = true
+beholdd-core = { path = "../beholdd-core" }
+beholdd-kernel = { path = "../beholdd-kernel" }
+beholdd-format = { path = "../beholdd-format" }
+ash = { version = "0.38", optional = true }
+# A checked source snapshot keeps standalone/offline builds independent of a sibling
+# checkout. The canonical source is exec-software/exec-hag; see tools/sync-hag.py.
+exec-hag = { path = "../../vendor/exec-hag", optional = true, features = ["linux-drm"] }
+
+[[example]]
+name = "hag_preflight"
+required-features = ["hag"]
+
+[[example]]
+name = "hag_linear_probe"
+required-features = ["hag-native"]
+
+[[example]]
+name = "hag_execution_probe"
+required-features = ["hag-native"]
+
+[[example]]
+name = "hag_ffn_probe"
+required-features = ["hag-native"]
+
+[[example]]
+name = "hag_attention_probe"
+required-features = ["hag-native"]
+
+[[example]]
+name = "hag_embedding_probe"
+required-features = ["hag-native"]
+
+[[example]]
+name = "hag_kquant_probe"
+required-features = ["hag-native"]
+
+[[example]]
+name = "hag_sigmoid_probe"
+required-features = ["hag-native"]
+
+[[example]]
+name = "hag_delta_probe"
+required-features = ["hag-native"]
+
+[[example]]
+name = "hag_finite_probe"
+required-features = ["hag-native"]
+
+[[example]]
+name = "hag_kquant_large_tile_probe"
+required-features = ["hag-native"]

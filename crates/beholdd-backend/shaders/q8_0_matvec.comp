@@ -1,0 +1,67 @@
+#version 460
+
+// One workgroup owns one output row. Q8_0 is stored as a little-endian f16 scale
+// followed by 32 signed bytes. Reading through uint words avoids requiring 8-bit
+// storage features and remains correct when a 34-byte block starts between words.
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, std430) readonly buffer InputVector {
+    float x[];
+};
+layout(set = 0, binding = 1, std430) readonly buffer PackedWeight {
+    uint words[];
+};
+layout(set = 0, binding = 2, std430) buffer OutputVector {
+    float y[];
+};
+
+layout(push_constant) uniform Parameters {
+    uint rows;
+    uint cols;
+    uint row_bytes;
+    float output_scale;
+    uint accumulate;
+    uint reserved;
+} pc;
+
+shared float partial[64];
+
+uint load_u8(uint byte_offset) {
+    uint word = words[byte_offset >> 2];
+    return (word >> ((byte_offset & 3u) * 8u)) & 0xffu;
+}
+
+void main() {
+    uint row = gl_WorkGroupID.x + gl_WorkGroupID.y * gl_NumWorkGroups.x;
+    uint lane = gl_LocalInvocationID.x;
+    if (row >= pc.rows) {
+        return;
+    }
+
+    float sum = 0.0;
+    uint row_start = row * pc.row_bytes;
+    for (uint col = lane; col < pc.cols; col += 64u) {
+        uint block_start = row_start + (col >> 5) * 34u;
+        uint scale_bits = load_u8(block_start) | (load_u8(block_start + 1u) << 8u);
+        float block_scale = unpackHalf2x16(scale_bits).x;
+        uint encoded = load_u8(block_start + 2u + (col & 31u));
+        int quant = encoded >= 128u ? int(encoded) - 256 : int(encoded);
+        sum += block_scale * float(quant) * x[col];
+    }
+    partial[lane] = sum;
+    barrier();
+
+    // Fixed reduction tree: deterministic for a fixed Vulkan implementation and easy
+    // to compare against the scalar CPU oracle within an accumulation-order tolerance.
+    for (uint stride = 32u; stride != 0u; stride >>= 1u) {
+        if (lane < stride) {
+            partial[lane] += partial[lane + stride];
+        }
+        barrier();
+    }
+
+    if (lane == 0u) {
+        float result = partial[0] * pc.output_scale;
+        y[row] = pc.accumulate != 0u ? y[row] + result : result;
+    }
+}

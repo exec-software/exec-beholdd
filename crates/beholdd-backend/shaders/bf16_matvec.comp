@@ -1,0 +1,60 @@
+#version 460
+
+// Native BF16 storage, f32 accumulation. BF16 widening is exactly a 16-bit shift into
+// an IEEE f32 word, so no conversion table or temporary matrix is needed.
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, std430) readonly buffer InputVector {
+    float x[];
+};
+layout(set = 0, binding = 1, std430) readonly buffer PackedWeight {
+    uint words[];
+};
+layout(set = 0, binding = 2, std430) buffer OutputVector {
+    float y[];
+};
+
+layout(push_constant) uniform Parameters {
+    uint rows;
+    uint cols;
+    uint row_bytes;
+    float output_scale;
+    uint accumulate;
+    uint reserved;
+} pc;
+
+shared float partial[64];
+
+uint load_bf16(uint element) {
+    uint word = words[element >> 1];
+    return (word >> ((element & 1u) * 16u)) & 0xffffu;
+}
+
+void main() {
+    uint row = gl_WorkGroupID.x + gl_WorkGroupID.y * gl_NumWorkGroups.x;
+    uint lane = gl_LocalInvocationID.x;
+    if (row >= pc.rows) {
+        return;
+    }
+
+    float sum = 0.0;
+    uint row_start = row * pc.cols;
+    for (uint col = lane; col < pc.cols; col += 64u) {
+        float weight = uintBitsToFloat(load_bf16(row_start + col) << 16u);
+        sum += weight * x[col];
+    }
+    partial[lane] = sum;
+    barrier();
+
+    for (uint stride = 32u; stride != 0u; stride >>= 1u) {
+        if (lane < stride) {
+            partial[lane] += partial[lane + stride];
+        }
+        barrier();
+    }
+
+    if (lane == 0u) {
+        float result = partial[0] * pc.output_scale;
+        y[row] = pc.accumulate != 0u ? y[row] + result : result;
+    }
+}

@@ -1,0 +1,58 @@
+#version 460
+
+// Fast BF16 routed-MoE stage 3. Each invocation owns one hidden element and
+// accumulates routes in ascending metadata order, preserving deterministic
+// route-reduction semantics.
+//
+// Dispatch ceil(hidden_size / 64) workgroups in X. Binding and push-constant
+// layout stay common with the first two stages:
+//   binding 0: route-major f32 source [K,H]
+//   binding 1: packed BF16 weights (inactive)
+//   binding 2: f32 destination [H]
+//   binding 3: four uint metadata words per route; word 3 is the route weight
+//
+// The host guarantees descriptor bounds, non-overlap, and non-wrapping H*K and
+// K*4 products. The sole bounds branch handles a partial final workgroup.
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, std430) readonly restrict buffer SourceActivations {
+    float source_values[];
+};
+layout(set = 0, binding = 1, std430) readonly restrict buffer PackedWeight {
+    uint weight_words[];
+};
+layout(set = 0, binding = 2, std430) restrict buffer DestinationActivations {
+    float destination_values[];
+};
+layout(set = 0, binding = 3, std430) readonly restrict buffer RouteMetadata {
+    uint route_meta[];
+};
+
+layout(push_constant) uniform Parameters {
+    uint hidden_size;       // H
+    uint intermediate_size; // F, retained for the common stage ABI
+    uint route_count;       // K
+    uint accumulate;        // zero overwrites; nonzero accumulates
+} pc;
+
+void main() {
+    uint hidden = gl_WorkGroupID.x * 64u + gl_LocalInvocationID.x;
+    if (hidden >= pc.hidden_size) {
+        return;
+    }
+
+    float sum = 0.0;
+    uint source_index = hidden;
+    uint weight_index = 3u;
+    for (uint route = 0u; route < pc.route_count; ++route) {
+        sum += uintBitsToFloat(route_meta[weight_index]) * source_values[source_index];
+        source_index += pc.hidden_size;
+        weight_index += 4u;
+    }
+
+    if (pc.accumulate != 0u) {
+        destination_values[hidden] += sum;
+    } else {
+        destination_values[hidden] = sum;
+    }
+}

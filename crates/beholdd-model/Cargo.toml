@@ -1,0 +1,62 @@
+[package]
+name = "beholdd-model"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+hag-native = ["beholdd-backend/hag-native"]
+
+[dependencies]
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+beholdd-core = { path = "../beholdd-core" }
+beholdd-format = { path = "../beholdd-format" }
+beholdd-backend = { path = "../beholdd-backend" }
+beholdd-kernel = { path = "../beholdd-kernel" }
+beholdd-memory = { path = "../beholdd-memory" }
+unicode-properties = { path = "vendor/unicode-properties", default-features = false, features = ["general-category"] }
+
+[[example]]
+name = "hag_dense_ffn_probe"
+required-features = ["hag-native"]
+
+[[example]]
+name = "hag_ffn_block_probe"
+required-features = ["hag-native"]
+
+[[example]]
+name = "hag_attention_block_probe"
+required-features = ["hag-native"]
+
+[[example]]
+name = "hag_vocabulary_probe"
+required-features = ["hag-native"]
+
+[[example]]
+name = "hag_model_probe"
+required-features = ["hag-native"]
+
+[[example]]
+name = "hag_qwen35_checked_block_probe"
+required-features = ["hag-native"]
+
+[[example]]
+name = "hag_qwen35_model_probe"
+required-features = ["hag-native"]
+
+[[example]]
+name = "hag_qwen35_advance_probe"
+required-features = ["hag-native"]
+
+[[example]]
+name = "hag_qwen35_chunk_probe"
+required-features = ["hag-native"]
+
+[[example]]
+name = "hag_openmythos_b4_probe"
+path = "examples/hag_openmythos_b4_probe.rs"
+required-features = ["hag-native"]

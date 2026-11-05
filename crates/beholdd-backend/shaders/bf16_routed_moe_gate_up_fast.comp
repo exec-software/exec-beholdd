@@ -1,0 +1,97 @@
+#version 460
+
+// Fast BF16 routed-MoE stage 1 for the validated inference path.
+//
+// This variant deliberately moves every bounds/alignment check to the host. It
+// also dispatches the logical matrix directly in two dimensions so the shader
+// does not divide a flattened workgroup index:
+//
+//   vkCmdDispatch(intermediate_size, route_count, 1)
+//   gl_WorkGroupID.x = intermediate row, gl_WorkGroupID.y = route
+//
+// Descriptor ABI:
+//   binding 0: tightly packed f32 input [H], exposed here as H/2 vec2 values
+//   binding 1: packed row-major BF16 weight words
+//   binding 2: f32 destination [K,F]
+//   binding 3: four uint metadata words per route
+//              [gate word offset, up word offset, down word offset,
+//               floatBitsToUint(route weight)]
+//
+// Weight offsets are uint-word offsets relative to binding 1, not byte offsets.
+// The host must guarantee nonzero even H and F, 8-byte alignment for binding 0,
+// 4-byte alignment for binding 1, exact dispatch dimensions, non-overlapping
+// restrict-qualified descriptors, and in-range/non-wrapping products. Each BF16
+// pair is loaded exactly once instead of having adjacent lanes load the same word.
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, std430) readonly restrict buffer SourceActivations {
+    vec2 source_pairs[];
+};
+layout(set = 0, binding = 1, std430) readonly restrict buffer PackedWeight {
+    uint weight_words[];
+};
+layout(set = 0, binding = 2, std430) writeonly restrict buffer DestinationActivations {
+    float destination_values[];
+};
+layout(set = 0, binding = 3, std430) readonly restrict buffer RouteMetadata {
+    uint route_meta[];
+};
+
+layout(push_constant) uniform Parameters {
+    uint hidden_size;       // H, nonzero and even
+    uint intermediate_size; // F, nonzero and even
+    uint route_count;       // K, retained for the common stage ABI
+    uint accumulate;        // consumed by stage 3; ignored here
+} pc;
+
+// One vec2 per lane holds {gate, up}; this has the same 512-byte LDS footprint
+// as two float[64] arrays while allowing each reduction step to update both sums.
+shared vec2 partial[64];
+
+vec2 unpack_bf16_pair(uint packed) {
+    return uintBitsToFloat(uvec2(packed << 16u, packed & 0xffff0000u));
+}
+
+void main() {
+    uint intermediate = gl_WorkGroupID.x;
+    uint route = gl_WorkGroupID.y;
+    uint lane = gl_LocalInvocationID.x;
+
+    uint hidden_words = pc.hidden_size >> 1u;
+    uint meta_index = route << 2u;
+    uint row_word_offset = intermediate * hidden_words;
+    uint gate_word = route_meta[meta_index] + row_word_offset;
+    uint up_word = route_meta[meta_index + 1u] + row_word_offset;
+
+    vec2 sums = vec2(0.0);
+    for (uint pair = lane; pair < hidden_words; pair += 64u) {
+        vec2 activation = source_pairs[pair];
+        sums += vec2(
+            dot(unpack_bf16_pair(weight_words[gate_word + pair]), activation),
+            dot(unpack_bf16_pair(weight_words[up_word + pair]), activation)
+        );
+    }
+
+    partial[lane] = sums;
+    barrier();
+
+    // Explicit fixed tree preserves deterministic reduction order. The final
+    // stride is folded into lane zero, avoiding a sixth workgroup barrier.
+    if (lane < 32u) partial[lane] += partial[lane + 32u];
+    barrier();
+    if (lane < 16u) partial[lane] += partial[lane + 16u];
+    barrier();
+    if (lane < 8u) partial[lane] += partial[lane + 8u];
+    barrier();
+    if (lane < 4u) partial[lane] += partial[lane + 4u];
+    barrier();
+    if (lane < 2u) partial[lane] += partial[lane + 2u];
+    barrier();
+
+    if (lane == 0u) {
+        vec2 totals = partial[0] + partial[1];
+        float gate = totals.x;
+        float silu = gate / (1.0 + exp(-gate));
+        destination_values[route * pc.intermediate_size + intermediate] = silu * totals.y;
+    }
+}

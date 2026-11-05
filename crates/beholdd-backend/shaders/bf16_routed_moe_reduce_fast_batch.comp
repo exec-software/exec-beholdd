@@ -1,0 +1,62 @@
+#version 460
+
+// Fixed-N BF16 routed-MoE stage 3. A three-dimensional dispatch covers every
+// output item while each invocation retains ascending-route accumulation order:
+//
+//   vkCmdDispatch(ceil(hidden_size / 64), 1, batch_size)
+//   gl_WorkGroupID.z = item
+//
+// Descriptor ABI:
+//   binding 0: tightly packed route-major f32 source [N,K,H]
+//   binding 1: packed BF16 arena block (inactive, retained for the common ABI)
+//   binding 2: tightly packed f32 destination [N,H]
+//   binding 3: four uint metadata words per item and route [N,K,4]
+//
+// The only branch covers the partial final hidden workgroup. The host guarantees
+// exact Y/Z dispatch dimensions and non-wrapping N*K*H and N*K*4 products.
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, std430) readonly restrict buffer SourceActivations {
+    float source_values[];
+};
+layout(set = 0, binding = 1, std430) readonly restrict buffer PackedWeight {
+    uint weight_words[];
+};
+layout(set = 0, binding = 2, std430) restrict buffer DestinationActivations {
+    float destination_values[];
+};
+layout(set = 0, binding = 3, std430) readonly restrict buffer RouteMetadata {
+    uint route_meta[];
+};
+
+layout(push_constant) uniform Parameters {
+    uint hidden_size;
+    uint intermediate_size;
+    uint route_count;
+    uint accumulate;
+} pc;
+
+void main() {
+    uint hidden = gl_WorkGroupID.x * 64u + gl_LocalInvocationID.x;
+    if (hidden >= pc.hidden_size) {
+        return;
+    }
+
+    uint item = gl_WorkGroupID.z;
+    uint occurrence_base = item * pc.route_count;
+    float sum = 0.0;
+    uint source_index = occurrence_base * pc.hidden_size + hidden;
+    uint weight_index = (occurrence_base << 2u) + 3u;
+    for (uint route = 0u; route < pc.route_count; ++route) {
+        sum += uintBitsToFloat(route_meta[weight_index]) * source_values[source_index];
+        source_index += pc.hidden_size;
+        weight_index += 4u;
+    }
+
+    uint destination_index = item * pc.hidden_size + hidden;
+    if (pc.accumulate != 0u) {
+        destination_values[destination_index] += sum;
+    } else {
+        destination_values[destination_index] = sum;
+    }
+}

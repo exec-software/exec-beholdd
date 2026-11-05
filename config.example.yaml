@@ -1,0 +1,23 @@
+# beholdd v2 native-runtime example. Relative model paths resolve beside this file.
+# The runtime budget includes weights, KV state, generation buffers, backend scratch,
+# and headroom. Keep it below any enclosing cgroup hard cap; 40 GB is the proven
+# resident budget under a separate 48 GiB service cap.
+memory_budget_bytes: 40000000000
+runtime_headroom_bytes: 4294967296
+
+models:
+  - id: qwen3-coder-30b
+    path: models/qwen3-coder-30b/Qwen3-Coder-30B-A3B-Instruct-Q8_0.gguf
+    weight_mode: resident
+    fit_policy: exact
+    allow_unsafe_storage: false
+    pinned_cache_bytes: 0
+    demand_cache_bytes: 0
+    prefetch_bytes: 0
+    prefetch_queue_depth: 0
+    prefetch_workers: 0
+    near_miss_prefetch: false
+
+# Despite its 30B parameter label, this Q8_0 checkpoint is a 32.48 GB file. It is the
+# checkpoint used for the documented native qwen3moe serving qualification.
+# Obtain it separately under its model license; no developer-local path is required.

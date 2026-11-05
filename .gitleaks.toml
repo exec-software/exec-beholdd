@@ -1,0 +1,13 @@
+title = "Beholdd source and history audit"
+
+[extend]
+useDefault = true
+
+# Exact historical public toolchain digest, not an API credential or a blanket
+# allowlist for hexadecimal strings, notebooks, or benchmark logs.
+[[allowlists]]
+description = "Pinned HIP API header SHA-256 in two historical build records"
+targetRules = ["generic-api-key"]
+condition = "AND"
+paths = ['''(^|/)tools/hip/graph-replay-(results|static)-2026-09-08\.md$''']
+regexes = ['''^0c2270e8f18150798e969daec4838ef84d0bc761394ecc933268e8eda149b37e$''']

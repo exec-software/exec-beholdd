@@ -1,0 +1,72 @@
+#version 460
+
+// Paired-load BF16 routed-MoE stage 1 with a fixed 32-lane reduction tree.
+// This is a tournament candidate; the qualified *_fast WG64 shader is kept
+// unchanged. Descriptor bindings and push constants intentionally match it.
+layout(local_size_x = 32, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, std430) readonly restrict buffer SourceActivations {
+    vec2 source_pairs[];
+};
+layout(set = 0, binding = 1, std430) readonly restrict buffer PackedWeight {
+    uint weight_words[];
+};
+layout(set = 0, binding = 2, std430) writeonly restrict buffer DestinationActivations {
+    float destination_values[];
+};
+layout(set = 0, binding = 3, std430) readonly restrict buffer RouteMetadata {
+    uint route_meta[];
+};
+
+layout(push_constant) uniform Parameters {
+    uint hidden_size;
+    uint intermediate_size;
+    uint route_count;
+    uint accumulate;
+} pc;
+
+shared vec2 partial[32];
+
+vec2 unpack_bf16_pair(uint packed) {
+    return uintBitsToFloat(uvec2(packed << 16u, packed & 0xffff0000u));
+}
+
+void main() {
+    uint intermediate = gl_WorkGroupID.x;
+    uint route = gl_WorkGroupID.y;
+    uint lane = gl_LocalInvocationID.x;
+
+    uint hidden_words = pc.hidden_size >> 1u;
+    uint meta_index = route << 2u;
+    uint row_word_offset = intermediate * hidden_words;
+    uint gate_word = route_meta[meta_index] + row_word_offset;
+    uint up_word = route_meta[meta_index + 1u] + row_word_offset;
+
+    vec2 sums = vec2(0.0);
+    for (uint pair = lane; pair < hidden_words; pair += 32u) {
+        vec2 activation = source_pairs[pair];
+        sums += vec2(
+            dot(unpack_bf16_pair(weight_words[gate_word + pair]), activation),
+            dot(unpack_bf16_pair(weight_words[up_word + pair]), activation)
+        );
+    }
+
+    partial[lane] = sums;
+    barrier();
+
+    if (lane < 16u) partial[lane] += partial[lane + 16u];
+    barrier();
+    if (lane < 8u) partial[lane] += partial[lane + 8u];
+    barrier();
+    if (lane < 4u) partial[lane] += partial[lane + 4u];
+    barrier();
+    if (lane < 2u) partial[lane] += partial[lane + 2u];
+    barrier();
+
+    if (lane == 0u) {
+        vec2 totals = partial[0] + partial[1];
+        float gate = totals.x;
+        float silu = gate / (1.0 + exp(-gate));
+        destination_values[route * pc.intermediate_size + intermediate] = silu * totals.y;
+    }
+}

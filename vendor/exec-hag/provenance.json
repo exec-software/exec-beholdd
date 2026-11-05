@@ -1,0 +1,139 @@
+{
+  "files": {
+    ".gitleaks.toml": {
+      "bytes": 167,
+      "sha256": "4f304d8657e79ec7687477a15ad2182eea5c4566429308e290d671decd9e4533"
+    },
+    "CONTRIBUTING.md": {
+      "bytes": 4565,
+      "sha256": "1baee279a6add74304113e5c290fd950aac95d3ba4f4bee691a7cbe9c76ee281"
+    },
+    "CONTRIBUTORS.md": {
+      "bytes": 777,
+      "sha256": "e5be70306ecb10f1ea07c015cd40238430499bde604e1c46f8967ab1f196502b"
+    },
+    "Cargo.lock": {
+      "bytes": 370,
+      "sha256": "4148b7145fc604d0e2c636123af8b2f5ef4ccf964721cac1695d2640886b429a"
+    },
+    "Cargo.toml": {
+      "bytes": 1247,
+      "sha256": "9c3389b9a0b6984861df86cd2d47afbefc5fe0c3d53b4d2b70ca5b8e0b27a16f"
+    },
+    "LICENSE": {
+      "bytes": 1103,
+      "sha256": "5591fd9c008676f41952e914200711f20167159fc3b4e18c9c8aba1590c03b53"
+    },
+    "README.md": {
+      "bytes": 5641,
+      "sha256": "c702bedfe14cb145b85feda4961c13201d9207ce1510a7d36708b751788975ea"
+    },
+    "SECURITY.md": {
+      "bytes": 3601,
+      "sha256": "4f616821dfc3052857d3a1334c79e1512e6a018c82a888adff4f1f2c2f1320dc"
+    },
+    "VERSION": {
+      "bytes": 3,
+      "sha256": "81db67b6a5702b9b68f0016f061c409bf3fb16d062fc854d1b424bb4e9c28c56"
+    },
+    "docs/development.md": {
+      "bytes": 5823,
+      "sha256": "d2ebf290bb17070dc9c9c50d2e753d5c1e66032e3d1d0d2677adf4f2c1e17099"
+    },
+    "docs/exact-inference.md": {
+      "bytes": 8320,
+      "sha256": "7d048cfe2c1642a69635bbc619a58afd4216ef451d2a0d669034cec14b97c1d5"
+    },
+    "docs/native-backend.md": {
+      "bytes": 4691,
+      "sha256": "8fa8008e4b7b5ad73948b34b1a4f832d378c123d1c03dd07172d6e6830e22021"
+    },
+    "docs/native-compute.md": {
+      "bytes": 16640,
+      "sha256": "b698c3f39955493a6f3b9ff2bc4bdfb35ebb92962857d1904c542a852b36b887"
+    },
+    "docs/native-probe.md": {
+      "bytes": 5467,
+      "sha256": "820445f0cdf3ce83fad4ca787c521cd175c69ba6d6953a7b5f507b8c395f383e"
+    },
+    "docs/publication.md": {
+      "bytes": 3313,
+      "sha256": "3310ec91818360e395cc7a14a3a8388653e4ad81f8d468dccfefdb46ddad2797"
+    },
+    "examples/native_probe.rs": {
+      "bytes": 1972,
+      "sha256": "9889655f8da5aa5f7bb41d4f784d89f2bdefe4ae1bca2bb5b4c4a2868d83096e"
+    },
+    "include/exec_hag.h": {
+      "bytes": 7253,
+      "sha256": "c234305d5d571cb58a0881b6ab29acda912a2fffa5c49c4da17d3324c7a9cb45"
+    },
+    "scripts/check_public_tree.py": {
+      "bytes": 3297,
+      "sha256": "70977bf7d36d1c9183bbcd2dda67c11451ccaee415909b740290815dd68b823c"
+    },
+    "src/budget.rs": {
+      "bytes": 13095,
+      "sha256": "8438cbe9ba413dee3118be5a6773594630a045700db9539fe172adc023b9ad05"
+    },
+    "src/capi.rs": {
+      "bytes": 33304,
+      "sha256": "17ee3f5bd021ba4dbcdc651d0aa456fb5cef7b196087ecce13a2db51774a8257"
+    },
+    "src/lib.rs": {
+      "bytes": 3468,
+      "sha256": "618b0386b048f91c29e52701e923c12907300b223eaf3535f7064b5b9243fe84"
+    },
+    "src/linux.rs": {
+      "bytes": 43082,
+      "sha256": "b1819fcf9902bac4b3e3923167c5bd7d91959d7ab36446f14d980857cf337f1e"
+    },
+    "src/linux/compute.rs": {
+      "bytes": 36093,
+      "sha256": "cbada7c9d169fb0726afc3ce4a18e797714b590fdd7a5133a8d4e548987c08cb"
+    },
+    "src/linux/compute/packets.rs": {
+      "bytes": 14206,
+      "sha256": "cf9f810886ca322c9ecab045825ac5c26c227f4b07c22306e0898a1db19b545c"
+    },
+    "src/linux/compute/tests.rs": {
+      "bytes": 59343,
+      "sha256": "6855c8d0308d574894a5d8302ce72af980a170e040b153451a4c1feea3d949a2"
+    },
+    "src/linux/probe.rs": {
+      "bytes": 23329,
+      "sha256": "59c264f7b5f88dd36549fa3f4452bd07553e6e6f7324a045d3b9c65b06ad737f"
+    },
+    "src/linux/probe/lifecycle_tests.rs": {
+      "bytes": 25573,
+      "sha256": "028d175c79b33dcfa8ad4f02b0d60ba640a69fc343541cdd4379a7d16003bc58"
+    },
+    "src/linux/probe_packets.rs": {
+      "bytes": 10936,
+      "sha256": "7379490324eacb2d3ffc620c747d8bbc7dedf20758d79a9a51906f170c135f58"
+    },
+    "src/linux/submission_uapi.rs": {
+      "bytes": 12341,
+      "sha256": "d0b50703f071520972c618ad1070b56ac96c74153e6d924dfb18402e4aa267c3"
+    },
+    "src/linux/uapi.rs": {
+      "bytes": 10417,
+      "sha256": "8653070fb132a258b16371aebd6757a44029f1317fae08948395c4313f1b3d7c"
+    },
+    "thirdparty.md": {
+      "bytes": 2683,
+      "sha256": "003ec779991848e6ccc24fc536029a51da457ae0f1bfeb84dc6d627ece750fa5"
+    },
+    "tools/audit_secrets.py": {
+      "bytes": 5936,
+      "sha256": "dd789a81b23e2874b3c8f1413133be99fb82e7f38b27a020b9ba340afc38dc3a"
+    }
+  },
+  "package": "exec-hag",
+  "schema_version": 1,
+  "source": {
+    "dirty": false,
+    "repository": "https://github.com/exec-software/exec-hag",
+    "revision": "cf9dc6a3c536d98251907d0cd72901bf384614de"
+  }
+}

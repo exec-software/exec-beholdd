@@ -1,0 +1,25 @@
+# Larger development profile for the fixed Qwen3-0.6B Q8_0 geometry.
+# Metadata/software checks do not establish live 16k numerical qualification.
+# Build with --features hag-native; set HAG_TRACE_SUBMISSION=0.
+# Use a dedicated finite 6 GiB process cgroup, zero swap, and host/thermal monitoring.
+# Forecast with the explicit 128 MiB allowance below: 5,417,203,904 host/UMA bytes,
+# including 4,629,168,128 native allocation bytes. Admission rechecks live headroom.
+memory_budget_bytes: 6442450944
+runtime_headroom_bytes: 134217728
+models:
+  - id: qwen3-0.6b-hag-16k
+    path: models/Qwen3-0.6B-Q8_0.gguf
+    execution_backend: hag
+    hag:
+      device: /dev/dri/renderD128
+      context_capacity: 16384
+      memory_budget_bytes: 4831838208 # 4608 MiB native allocation budget
+    weight_mode: streaming
+    fit_policy: exact
+    allow_unsafe_storage: false
+    pinned_cache_bytes: 0
+    demand_cache_bytes: 0
+    prefetch_bytes: 0
+    prefetch_queue_depth: 0
+    prefetch_workers: 0
+    near_miss_prefetch: false

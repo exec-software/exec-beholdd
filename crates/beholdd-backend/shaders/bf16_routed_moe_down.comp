@@ -1,0 +1,109 @@
+#version 460
+
+// BF16 routed-MoE stage 2: multiply each route's [F] stage-1 activation by
+// its row-major down matrix [H,F], producing route-major [K,H] f32 output.
+// One workgroup owns one (route, hidden) output and reduces F with a fixed tree.
+//
+// Shared descriptor ABI:
+//   binding 0: source f32 activations (route-major [K,F])
+//   binding 1: packed row-major BF16 weights
+//   binding 2: destination f32 activations (route-major [K,H])
+//   binding 3: route metadata, four uints per route:
+//              gate byte offset, up byte offset, down byte offset,
+//              floatBitsToUint(route weight)
+//
+// Weight byte offsets are relative to binding 1 and must be 2-byte aligned.
+// The host must prove every access is in range and that all relevant H/F/K
+// products, metadata indices, and byte-offset arithmetic fit in uint32. Invalid
+// out-of-range weight loads return zero solely as a memory-safety backstop.
+//
+// Dispatch K*H workgroups, flattened over x then y. A compute-to-compute memory
+// barrier is required before this destination is consumed by stage 3.
+layout(local_size_x = 64, local_size_y = 1, local_size_z = 1) in;
+
+layout(set = 0, binding = 0, std430) readonly buffer SourceActivations {
+    float source_values[];
+};
+layout(set = 0, binding = 1, std430) readonly buffer PackedWeight {
+    uint weight_words[];
+};
+layout(set = 0, binding = 2, std430) buffer DestinationActivations {
+    float destination_values[];
+};
+layout(set = 0, binding = 3, std430) readonly buffer RouteMetadata {
+    uint route_meta[];
+};
+
+layout(push_constant) uniform Parameters {
+    uint hidden_size;       // H
+    uint intermediate_size; // F
+    uint route_count;       // K
+    uint accumulate;        // consumed by stage 3; ignored here
+} pc;
+
+shared float partial[64];
+
+float load_bf16_at(uint byte_offset) {
+    if ((byte_offset & 1u) != 0u) {
+        return 0.0;
+    }
+
+    uint word_index = byte_offset >> 2u;
+    if (word_index >= uint(weight_words.length())) {
+        return 0.0;
+    }
+
+    uint shift = (byte_offset & 2u) * 8u;
+    uint bits = (weight_words[word_index] >> shift) & 0xffffu;
+    return uintBitsToFloat(bits << 16u);
+}
+
+void main() {
+    if (pc.hidden_size == 0u || pc.intermediate_size == 0u || pc.route_count == 0u) {
+        return;
+    }
+
+    uint workgroup = gl_WorkGroupID.x + gl_WorkGroupID.y * gl_NumWorkGroups.x;
+    uint route = workgroup / pc.hidden_size;
+    if (route >= pc.route_count || route > 1073741823u) {
+        return;
+    }
+
+    uint destination_index = workgroup;
+    uint source_base = route * pc.intermediate_size;
+    if (destination_index >= uint(destination_values.length()) ||
+        source_base > uint(source_values.length()) ||
+        pc.intermediate_size > uint(source_values.length()) - source_base) {
+        return;
+    }
+
+    uint meta_index = route * 4u;
+    if (uint(route_meta.length()) < 4u || meta_index > uint(route_meta.length()) - 4u) {
+        return;
+    }
+
+    uint hidden = workgroup % pc.hidden_size;
+    uint down_base = route_meta[meta_index + 2u];
+    uint row_base = down_base + hidden * pc.intermediate_size * 2u;
+    uint lane = gl_LocalInvocationID.x;
+
+    float sum = 0.0;
+    for (uint intermediate = lane; intermediate < pc.intermediate_size; intermediate += 64u) {
+        sum += load_bf16_at(row_base + intermediate * 2u) *
+               source_values[source_base + intermediate];
+    }
+
+    partial[lane] = sum;
+    barrier();
+
+    for (uint stride = 32u; stride != 0u; stride >>= 1u) {
+        if (lane < stride) {
+            partial[lane] += partial[lane + stride];
+        }
+        barrier();
+    }
+
+    if (lane == 0u) {
+        destination_values[destination_index] = partial[0];
+    }
+}

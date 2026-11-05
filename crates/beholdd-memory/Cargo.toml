@@ -1,0 +1,15 @@
+[package]
+name = "beholdd-memory"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+# Non-default and intentionally narrow: adds no HTTP control and cannot alter checkpoint
+# data; it permits only deterministic worker termination for the M3.3 liveness gate.
+test-fault-injection = []
+
+[dependencies]
+anyhow.workspace = true
+beholdd-format = { path = "../beholdd-format" }

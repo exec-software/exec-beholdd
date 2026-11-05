@@ -1,0 +1,44 @@
+# Explicit experimental native HAG serving; CPU remains the default elsewhere.
+# Build beholdd-cli with --features hag-native and set HAG_TRACE_SUBMISSION=0.
+# This example does not start a service or open a device by itself.
+# This compatibility profile uses 2048 evaluated positions with on-demand attention.
+# Full-model C2048 numerical qualification passed. The exact synthetic no-tools
+# P467/M128 project-instructions profile also passed on validation-host, Linux
+# 6.17.0-1024-oem, on 2026-10-08: three native requests of 473 positions each.
+# See docs/hag-editor-context.md#qualified-c2048-project-instructions-on-validation-host--2026-10-08.
+# This does not qualify every C2048 request, full tools, general quality,
+# concurrency, throughput or live cancellation. Historical C512 evidence is separate.
+# A separate lifecycle-c2048 Hello gate passed real TCP cancellation/reset/reuse,
+# idempotent unload, same-process reload and idle SIGTERM: 46 native positions.
+# See docs/hag-editor-context.md#qualified-c2048-tcp-lifecycle-on-validation-host--2026-10-08.
+# Explicit context_capacity admits 1..16384; omission retains 2048.
+# See config.hag-16k.example.yaml for the larger development profile and budgets.
+# prompt_tokens + max_new_tokens - 1 <= 2048, including chat-template tokens.
+# Omitted max_tokens resolves after tokenization; explicit overflow is HTTP 400.
+# Use a separate 2 GiB/no-swap process supervisor with a 1.5 GiB early-stop limit.
+# The new serving profile retains CPU75%, cutoff90C and finite stage deadlines.
+# Forecast: 1,914,935,488 host/UMA bytes, including 1,135,140,864 HAG bytes
+# and a separate 1 MiB metadata allowance; measured pressure is separate.
+# See docs/hag-qualification.md for the CPU-first serving qualification runner.
+memory_budget_bytes: 2147483648       # combined conservative host + shared-UMA forecast
+runtime_headroom_bytes: 134217728    # 128 MiB general runtime allowance, beyond counted metadata
+
+models:
+  - id: qwen3-0.6b-hag
+    path: models/Qwen3-0.6B-Q8_0.gguf
+    execution_backend: hag
+    hag:
+      context_capacity: 2048
+      device: /dev/dri/renderD128
+      memory_budget_bytes: 1207959552 # separate 1152 MiB HAG allocation budget
+    # Streaming means sequential preparation reads; all prepared GPU weights
+    # remain resident. No host checkpoint cache or CPU fallback is created.
+    weight_mode: streaming
+    fit_policy: exact
+    allow_unsafe_storage: false
+    pinned_cache_bytes: 0
+    demand_cache_bytes: 0
+    prefetch_bytes: 0
+    prefetch_queue_depth: 0
+    prefetch_workers: 0
+    near_miss_prefetch: false

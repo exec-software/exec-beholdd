@@ -1,0 +1,14 @@
+/target
+**/*.rs.bk
+__pycache__/
+*.py[cod]
+.beholdd/
+
+# Local credentials and signing material, never publication inputs.
+.env
+.env.*
+!.env.example
+!.env.sample
+*.key
+*.p12
+*.pfx

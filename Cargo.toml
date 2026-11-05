@@ -1,0 +1,35 @@
+# beholdd v2 workspace.
+#
+# The crate split IS the modularity claim: each layer must be replaceable without touching
+# the ones above it, and testable with no model, no GPU and no network. If a change to a
+# backend requires editing a model, or a new architecture requires editing the runtime,
+# the seam is in the wrong place -- see README.md.
+[workspace]
+resolver = "2"
+exclude = ["vendor/exec-hag"]
+members = [
+    "crates/beholdd-core",      # tensors, dtypes, quant formats. no I/O, no arithmetic
+    "crates/beholdd-format",    # safetensors / GGUF readers, tensor discovery
+    "crates/beholdd-kernel",    # the arithmetic, per ISA
+    "crates/beholdd-backend",   # the Device trait: cpu, vulkan, hag
+    "crates/beholdd-model",     # architectures: declarative specs + composed modules
+    "crates/beholdd-memory",    # residency, streaming, caches, pinning, the fit contract
+    "crates/beholdd-runtime",   # .beholdd home, config, registry, scheduling
+    "crates/beholdd-server",    # OpenAI-compatible HTTP
+    "crates/beholdd-embed",     # in-process API. no daemon, no ports
+    "crates/beholdd-cli",       # the binary
+]
+
+[workspace.package]
+version = "0.0.1"
+edition = "2021"
+license = "Apache-2.0"
+repository = "https://github.com/exec-software/exec-beholdd"
+
+[workspace.dependencies]
+anyhow = "1"
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_yaml = "0.9"
+serde_json = "1"
+tracing = "0.1"

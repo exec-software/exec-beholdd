@@ -1,0 +1,33 @@
+# Copyright (C) 2008 - 2026 Execute Software.  All rights reserved.
+# SPDX-License-Identifier: MIT
+
+[package]
+name = "exec-hag"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.85"
+license = "MIT"
+description = "Budgeted native hardware resources and experimental bounded GPU compute"
+repository = "https://github.com/exec-software/exec-hag"
+include = ["/src/**", "/include/**", "/docs/**", "/examples/**", "/scripts/**", "/tools/audit_secrets.py", "/.gitleaks.toml", "/Cargo.toml", "/Cargo.lock", "/LICENSE", "/README.md", "/CONTRIBUTING.md", "/CONTRIBUTORS.md", "/SECURITY.md", "/thirdparty.md", "/VERSION"]
+
+[lib]
+# cdylib and staticlib let non-Rust callers link the C ABI in src/capi.rs.
+# The rlib remains the Rust consumers' path and is unaffected.
+crate-type = ["rlib", "cdylib", "staticlib"]
+
+[features]
+default = []
+linux-drm = ["dep:libc"]
+native-probe = ["linux-drm"]
+native-compute = ["native-probe"]
+# The C ABI over the bounded compute queue. Separate from native-compute so a
+# Rust-only build never exports C symbols it does not need.
+capi = ["native-compute"]
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = { version = "0.2", optional = true }
+
+[[example]]
+name = "native_probe"
+required-features = ["native-probe"]

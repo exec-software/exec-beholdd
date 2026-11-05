@@ -1,0 +1,12 @@
+# Small native CPU bring-up fixture. Paths resolve beside this config file.
+# Copy to .beholdd/config.yaml and point path at an existing Qwen3-0.6B Q8_0 GGUF.
+# This checks the inference path; it is not a replacement for a larger coding model.
+memory_budget_bytes: 3221225472 # 3 GiB
+runtime_headroom_bytes: 1073741824 # 1 GiB
+
+models:
+  - id: qwen3-0.6b
+    path: models/Qwen3-0.6B-Q8_0.gguf
+    weight_mode: resident
+    fit_policy: exact
+    allow_unsafe_storage: false

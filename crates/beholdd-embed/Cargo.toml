@@ -1,0 +1,14 @@
+[package]
+name = "beholdd-embed"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[features]
+hag-native = ["beholdd-runtime/hag-native"]
+
+[dependencies]
+anyhow.workspace = true
+thiserror.workspace = true
+beholdd-runtime = { path = "../beholdd-runtime" }
