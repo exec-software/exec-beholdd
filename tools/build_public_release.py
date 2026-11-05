@@ -184,6 +184,35 @@ def license_inventory(metadata, output):
     (output / 'inventory.json').write_text(json.dumps(records, indent=2) + '\n')
 
 
+def collect_rust_notices(sysroot, output, rustc_identity):
+    """Retain notices actually supplied by the exact pinned Rust distribution."""
+    directory = sysroot / 'share/doc/rust'
+    scoped = directory / 'COPYRIGHT-library.html'
+    if scoped.is_file():
+        files = [scoped]
+        scope = 'standard-library'
+    else:
+        files = [path for name in ['COPYRIGHT.html', 'COPYRIGHT']
+                 if (path := directory / name).is_file()]
+        scope = 'full-distribution'
+    if not files:
+        raise ValueError('pinned Rust distribution contains no standard-library or distribution copyright notice')
+    files += sorted(path for path in directory.glob('LICENSE*') if path.is_file())
+    output.mkdir(parents=True)
+    records = []
+    for source in files:
+        if source.is_symlink() or not source.resolve().is_relative_to(sysroot.resolve()):
+            raise ValueError('Rust notice source escapes its pinned distribution')
+        target = output / source.name
+        shutil.copyfile(source, target)
+        records.append({'file': source.name, 'source': str(source.relative_to(sysroot)),
+                        'sha256': digest(target), 'bytes': target.stat().st_size})
+    receipt = {'scope': scope, 'rustc': rustc_identity, 'files': records,
+               'origin': 'Unmodified notices from the digest-pinned Rust builder image.'}
+    (output / 'provenance.json').write_text(json.dumps(receipt, indent=2) + '\n')
+    return receipt
+
+
 def inside(arguments):
     validate_cgroup()
     action, *args = arguments
@@ -197,6 +226,8 @@ def inside(arguments):
         if (facts['glibc'] != 'glibc 2.31' or not facts['rustc'].startswith('rustc 1.98.0 ')
                 or facts['python'] != 'Python 3.12.10' or facts['node'] != 'v22.20.0'):
             raise ValueError('builder toolchain differs from its pinned contract')
+        sysroot = Path(subprocess.check_output(['rustc', '--print', 'sysroot'], text=True).strip())
+        facts['rustRuntimeNotices'] = collect_rust_notices(sysroot, Path('/work/rust-runtime-notices'), facts['rustc'])
         Path('/work/toolchain.json').write_text(json.dumps(facts, indent=2) + '\n')
     elif action == 'component':
         component = args[0]
@@ -220,6 +251,10 @@ def inside(arguments):
         licenses = output / 'licenses'
         licenses.mkdir()
         license_inventory(metadata, licenses)
+        shutil.copytree('/work/rust-runtime-notices', licenses / 'rust-standard-library')
+        (licenses / 'chat-templates').mkdir()
+        shutil.copyfile('/source/crates/beholdd-server/src/templates/README.md', licenses / 'chat-templates/README.md')
+        shutil.copyfile('/source/LICENSE', licenses / 'chat-templates/LICENSE-APACHE-2.0')
         receipt = {'cargoFeatures': ['hag-native'] if component == 'hag' else [],
                    'binary': {'path': f'{component}/bin/beholdd', 'sha256': digest(binary), 'bytes': binary.stat().st_size},
                    'requiredGlibcVersions': required, 'emptyRegistryHttpSmoke': 'passed'}
@@ -265,6 +300,7 @@ def inside(arguments):
         licenses = output / 'licenses'
         licenses.mkdir()
         license_inventory(metadata, licenses)
+        shutil.copytree('/work/rust-runtime-notices', licenses / 'rust-standard-library')
         receipt = {'source': provenance['source'], 'version': (source / 'VERSION').read_text().strip(),
                    'cargoFeatures': ['capi'], 'cargoLockSha256': digest(source / 'Cargo.lock'),
                    'files': files, 'headerSha256': digest(output / 'include/exec_hag.h'),
@@ -290,14 +326,16 @@ class Builder:
         arguments = ['docker', 'create', '--name', container, '--platform', 'linux/amd64',
                      '--memory', str(MEMORY), '--memory-swap', str(MEMORY), '--cpus', '1.5',
                      '--pids-limit', str(PIDS), '--cap-drop', 'ALL', '--security-opt', 'no-new-privileges',
-                     '--read-only', '--tmpfs', '/tmp:rw,nosuid,nodev,size=268435456',
+                     '--read-only', '--tmpfs', '/tmp:rw,nosuid,nodev,noexec,size=268435456',
                      '--network', 'bridge' if network else 'none', '--user', f'{os.getuid()}:{os.getgid()}',
                      '--mount', f'type=bind,source={self.source},target=/source,readonly',
                      '--mount', f'type=bind,source={self.work / "work"},target=/work',
                      '--workdir', '/source']
         environment = {'HOME': '/work/home', 'CARGO_HOME': '/work/cargo', 'CARGO_TARGET_DIR': '/work/target',
                        'CARGO_BUILD_JOBS': '1', 'RUST_TEST_THREADS': '1', 'CARGO_ENCODED_RUSTFLAGS': REMAP,
-                       'PYTHONDONTWRITEBYTECODE': '1'}
+                       # Rust doctests, C link smokes and Python fixtures execute temporary files.
+                       # Keep these inside the bounded writable work mount; /tmp stays noexec.
+                       'PYTHONDONTWRITEBYTECODE': '1', 'TMPDIR': '/work/tmp'}
         for key, value in environment.items():
             arguments += ['--env', key + '=' + value]
         arguments += [self.image, 'python3', '/source/tools/build_public_release.py', '--inside', *command]
@@ -346,7 +384,8 @@ def main():
         raise ValueError('invalid rolling release version')
     work.mkdir(parents=True)
     builder = Builder(work)
-    for directory in [builder.source, builder.logs, work / 'work', work / 'work/home', work / 'output']:
+    for directory in [builder.source, builder.logs, work / 'work', work / 'work/home',
+                      work / 'work/tmp', work / 'output']:
         directory.mkdir()
     source_tar = subprocess.check_output(['git', 'archive', '--format=tar', 'HEAD'], cwd=ROOT)
     with tarfile.open(fileobj=io.BytesIO(source_tar)) as archive:

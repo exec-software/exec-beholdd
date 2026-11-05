@@ -79,6 +79,8 @@ class ReleaseBoundaryTests(unittest.TestCase):
                 self.assertEqual(create[create.index(option) + 1], value)
             self.assertNotIn('--privileged', create)
             self.assertNotIn('--device', create)
+            self.assertIn('TMPDIR=/work/tmp', create)
+            self.assertIn('noexec', create[create.index('--tmpfs') + 1])
             self.assertEqual(run.call_args_list[-1].args[0],
                              ['docker', 'rm', '--force', create[create.index('--name') + 1]])
             self.assertEqual(builder.stages, [])
@@ -88,6 +90,30 @@ class ReleaseBoundaryTests(unittest.TestCase):
                     'resolve': {'root': 'untrusted', 'nodes': [{'id': 'untrusted', 'deps': []}]}}
         with tempfile.TemporaryDirectory() as temporary, self.assertRaisesRegex(ValueError, 'outside'):
             release.license_inventory(metadata, Path(temporary))
+
+    def test_rust_notice_uses_exact_scoped_distribution_file(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            notices = root / 'sysroot/share/doc/rust'
+            notices.mkdir(parents=True)
+            (notices / 'COPYRIGHT-library.html').write_text('synthetic standard library notice')
+            (notices / 'COPYRIGHT.html').write_text('broader synthetic notice')
+            result = release.collect_rust_notices(root / 'sysroot', root / 'output', 'synthetic rustc identity')
+            self.assertEqual(result['scope'], 'standard-library')
+            self.assertEqual([record['file'] for record in result['files']], ['COPYRIGHT-library.html'])
+            self.assertEqual(result['files'][0]['sha256'], release.digest(notices / 'COPYRIGHT-library.html'))
+
+    def test_rust_notice_absence_fails_and_broader_fallback_is_labeled(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            notices = root / 'sysroot/share/doc/rust'
+            notices.mkdir(parents=True)
+            with self.assertRaisesRegex(ValueError, 'no standard-library'):
+                release.collect_rust_notices(root / 'sysroot', root / 'missing', 'synthetic rustc')
+            (notices / 'COPYRIGHT.html').write_text('synthetic full distribution notice')
+            result = release.collect_rust_notices(root / 'sysroot', root / 'output', 'synthetic rustc')
+            self.assertEqual(result['scope'], 'full-distribution')
+            self.assertEqual([record['file'] for record in result['files']], ['COPYRIGHT.html'])
 
 
 if __name__ == '__main__':

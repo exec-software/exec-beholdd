@@ -28,6 +28,8 @@ Only Cargo dependency fetching has network access; compilation and tests are
 offline. No GPU device, model file, private checkout or credential directory is
 mounted. This is a hosted-build supervisor; it does not replace or relax the local
 [development supervisor](development.md#optional-linux-resource-supervisor).
+Executable temporary compiler/test files use the bounded writable work mount;
+the separate `/tmp` mount remains non-executable.
 
 The build runs the default Rust workspace suite and an expanded suite with HAG,
 OpenMythos and memory-failure test features. The separate Vulkan prototype needs
@@ -50,6 +52,10 @@ directory and contains:
 - Project documentation, example configurations, Cargo lock and license.
 - Per-component `licenses/` text and inventories for the exact normal/build
   dependency graph, including the linked HAG MIT notice.
+- Each component also retains the pinned Rust distribution's standard-library
+  copyright notice and license files with hashes. If that image provides only a
+  broader distribution copyright notice, its receipt records that broader scope.
+  CPU/HAG server artifacts include chat-template provenance and Apache-2.0 text.
 - `hag-library/`, containing the standalone HAG shared/static libraries, C header,
   dependency notices and its own unchanged vendored source revision and lockfile.
   Both libraries pass a C link/execution smoke using constant-query functions;
