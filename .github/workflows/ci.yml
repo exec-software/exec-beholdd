@@ -1,0 +1,36 @@
+name: Build and test
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  workspace:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # Default features only: vulkan and hag are opt-in, and nothing here
+      # touches a GPU or a Vulkan loader.
+      - name: Test the workspace
+        run: cargo test --workspace --locked
+
+      # The optional backends are the point of the project, so keep them
+      # compiling even though this runner cannot exercise them. ash links the
+      # Vulkan loader at runtime, and the hag backend builds from the checked
+      # vendor snapshot, so neither needs a system library here.
+      - name: Check the Vulkan and HAG backends
+        run: cargo check --workspace --all-targets --locked --features beholdd-backend/vulkan,beholdd-backend/hag
+
+      # No fmt or clippy gate: the tree is not rustfmt-clean and carries no
+      # rustfmt.toml, so adding one would land red. Format first, then gate.

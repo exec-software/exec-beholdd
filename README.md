@@ -177,3 +177,8 @@ development through [Execute Software donations](https://www.buymeacoffee.com/ex
 
 For enterprise licensing and support, contact
 [admin@executesoftware.com](mailto:admin@executesoftware.com).
+
+## License
+
+Beholdd is licensed under the [Apache License 2.0](LICENSE). Model
+checkpoints are not covered by it and remain under their own licenses.
