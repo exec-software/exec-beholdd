@@ -174,3 +174,6 @@ Beholdd is built by Execute Software and its community. See
 
 Contributions and reproducible bug reports are welcome. You can support ongoing
 development through [Execute Software donations](https://www.buymeacoffee.com/execsoftware).
+
+For enterprise licensing and support, contact
+[admin@executesoftware.com](mailto:admin@executesoftware.com).
