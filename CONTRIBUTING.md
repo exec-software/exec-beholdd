@@ -22,5 +22,9 @@ Preserve third-party notices and identify the source and redistribution terms of
 new dependencies, datasets and other assets. Model weights and user data are not
 automatically covered by the source-code license.
 
+Execute Software and community contributors are recognized in
+[CONTRIBUTORS.md](CONTRIBUTORS.md). You may add your preferred name to the
+community section when submitting a contribution.
+
 Release identity, signing, publication, and repository visibility are maintainer
 operations. A source cleanup or passing local test does not publish a release.

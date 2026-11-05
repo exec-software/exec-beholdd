@@ -169,5 +169,8 @@ checkout is not required.
 
 ## Support
 
+Beholdd is built by Execute Software and its community. See
+[CONTRIBUTORS.md](CONTRIBUTORS.md) for the core team and contributor credits.
+
 Contributions and reproducible bug reports are welcome. You can support ongoing
 development through [Execute Software donations](https://www.buymeacoffee.com/execsoftware).
